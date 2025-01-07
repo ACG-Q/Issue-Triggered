@@ -19,7 +19,7 @@ jobs:
       id: extract-url
       run: |
         echo "${{ github.event.issue.body }}" > issue_body.txt
-        url=$(grep -oP '(https://[^\s]+\.apks)' issue_body.txt || echo "none")
+        url=$(grep -oP '(https://[^\s]+\.zip)' issue_body.txt || echo "none")
         echo "url=$url" >> $GITHUB_ENV
 
     # Step 3: 下载 APKS 文件
