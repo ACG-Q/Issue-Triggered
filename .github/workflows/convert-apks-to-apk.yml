@@ -1,0 +1,77 @@
+name: Convert APKS to APK
+
+on:
+  issues:
+    types: [opened, edited, labeled] # 监听 Issue 的创建、编辑和添加标签事件
+
+jobs:
+  convert-apks-to-apk:
+    if: contains(github.event.issue.labels.*.name, 'apks-to-apk-converter') # 只在有特定标签时运行
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 1: 检出代码
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Step 2: 提取 Issue Body 中的文件链接
+    - name: Extract APKS file URL
+      id: extract-url
+      run: |
+        echo "${{ github.event.issue.body }}" > issue_body.txt
+        url=$(grep -oP '(https://[^\s]+\.apks)' issue_body.txt || echo "none")
+        echo "url=$url" >> $GITHUB_ENV
+
+    # Step 3: 下载 APKS 文件
+    - name: Download APKS
+      if: env.url != 'none'
+      run: |
+        curl -L "${{ env.url }}" -o input.apks
+      shell: bash
+
+    # Step 4: 设置 Java 环境
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '21'
+
+    # Step 5: 自动下载最新的 BundleTool
+    - name: Download the latest BundleTool
+      run: |
+        LATEST_VERSION=$(curl -s https://api.github.com/repos/google/bundletool/releases/latest | grep "tag_name" | cut -d '"' -f 4)
+        DOWNLOAD_URL="https://github.com/google/bundletool/releases/download/${LATEST_VERSION}/bundletool-all-${LATEST_VERSION#v}.jar"
+        curl -L $DOWNLOAD_URL -o bundletool.jar
+        if [ ! -f "bundletool.jar" ]; then
+          echo "Failed to download BundleTool." && exit 1
+        fi
+
+    # Step 6: 转换 APKS 文件为 APK
+    - name: Convert APKS to APK
+      run: |
+        java -jar bundletool.jar build-apks \
+          --apks=input.apks \
+          --output=output.apk \
+          --mode=universal
+    
+    # Step 7: 上传生成的 APK 文件到 Artifacts
+    - name: Upload APK to Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: apk-${{ github.event.issue.number }}
+        path: output.apk
+
+    # Step 8: 回复 Issue，提供 Artifact 的下载链接
+    - name: Comment on Issue
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const artifactUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`
+          github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: `🎉 Conversion complete!  
+          Here is your APK file:  
+          [Download APK from Artifacts](${artifactUrl})`
+          })
